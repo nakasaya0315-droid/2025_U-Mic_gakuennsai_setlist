@@ -5,43 +5,32 @@
 <title>学園祭ライブ | セットリスト表示</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-body { margin:0; font-family:'Segoe UI',sans-serif; background: linear-gradient(135deg,#5e60ce,#65a2a2,#5cf602); color:#fff; text-align:center; padding:30px; }
-/* Day1： */
-body.day1 {
-    background: linear-gradient(135deg, #ff8c00, #ff3c78, #ffd700);
-}
-
-/* Day2： */
-body.day2 {
-    background: linear-gradient(0deg,#e5d971,#b4d76c,#57ac67);
-}
-
-/* ステージ発表：豪華な感じ */
-body.stage {
-    background: linear-gradient(
-        135deg,
-        #000000 0%,       /* 黒 0〜50% */
-        #000000 50%,
-        #d4af37 50%,      /* 金 50〜80%（30%） */
-        #d4af37 80%,
-        #ffffff 80%,      /* 白 80〜90%（10%） */
-        #ffffff 90%,
-        #ff0000 90%,      /* 赤 90〜100%（10%） */
-        #ff0000 100%
-    );
-}
-
-h1{font-size:2.2em;margin-bottom:10px;}
-#current{font-size:1.6em;margin-top:20px;}
-#next{font-size:1.3em;margin-top:10px;}
-.card{ background: rgba(255,255,255,0.15); backdrop-filter: blur(10px); padding:20px; border-radius:20px; max-width:600px; margin:0 auto;}
-select{ padding:10px; font-size:1.1em; border-radius:8px; border:none; }
-table{ width:100%; margin-top:20px; border-collapse:collapse; color:#000; background: rgba(255,255,255,0.85); border-radius:8px; overflow:hidden;}
-td,th{ padding:8px; border-bottom:1px solid rgba(0,0,0,0.08); text-align:left; }
+body { margin:0; font-family:'Segoe UI',sans-serif; color:#fff; text-align:center; padding:15px; font-size:16px;}
+body.day1 { background: linear-gradient(135deg, #ff8c00, #ff3c78, #ffd700); }
+body.day2 { background: linear-gradient(0deg,#e5d971,#b4d76c,#57ac67); }
+body.stage { background: linear-gradient(135deg, #000 0%, #000 50%, #d4af37 50%, #d4af37 80%, #fff 80%, #fff 90%, #ff0000 90%, #ff0000 100%); }
+h1{font-size:1.8em;margin-bottom:10px;}
+#current{font-size:1.4em;margin-top:15px;}
+#next{font-size:1.2em;margin-top:10px;}
+.card{ background: rgba(255,255,255,0.15); backdrop-filter: blur(10px); padding:15px; border-radius:15px; max-width:100%; margin:0 auto;}
+select{ width:100%; padding:8px; font-size:1.2em; border-radius:8px; border:none; margin-top:8px;}
+.table-container { overflow-x:auto; margin-top:15px; }
+table { width:100%; border-collapse:collapse; color:#000; background: rgba(255,255,255,0.85); border-radius:8px; overflow:hidden;}
+td,th { padding:8px; border-bottom:1px solid rgba(0,0,0,0.08); text-align:left; white-space: nowrap; }
+button { margin-left:10px; }
+.finished { color: gray; }
+.playing { color: blue; }
+.upcoming { color: black; }
+.map img { width:100%; max-width:600px; display:block; margin:10px auto; }
 </style>
 </head>
 <body>
 <h1>学園祭ライブ セットリスト</h1>
+
+<div class="map">
+  images/map_day.png
+</div>
+
 <div class="card">
   <p>日付を選択：</p>
   <select id="daySelect">
@@ -49,268 +38,157 @@ td,th{ padding:8px; border-bottom:1px solid rgba(0,0,0,0.08); text-align:left; }
     <option value="Day2">Day2</option>
     <option value="ステージ発表">ステージ発表</option>
   </select>
-  <div id="current">読み込み中...</div>  <div id="next"></div>
-  <div id="error" style="color: #ffdddd; margin-top:12px"></div>
-  <table id="table"></table>
+  <div id="current">読み込み中...</div>
+  <div id="next"></div>
+  <div class="table-container"><table id="table"></table></div>
 </div>
 
 <script>
-// ======= 設定部分 =======
+// ======= 設定 =======
 const SHEET_ID = "1V0cVVTlYwR1QigjIL1OG2F62f7btDg_GiWhdqBq6Aq4";
-
-// ★★★ テスト用：ここに入れる ★★★
-const TEST_MODE = false;   // ←テストしたい時だけ true
-const TEST_DATE = "2025-11-23"; // Day1 の動作を確認したい
-const TEST_TIME = "09:00";       // 表示させたい時間（例：12:30）
-
-// 本番日
 const DAY1_DATE = "2025-11-22";
 const DAY2_DATE = "2025-11-23";
+const LIVE_END_MINUTES = 16*60+30; // 16:30
+const STAGE_START_MINUTES = 14*60+30; // 15:00
 
-// ステージ発表時刻
-const STAGE_SWITCH_MIN = 14 * 60 + 30; // 14:30
-const STAGE_REAL_START = 15 * 60;      // 表示では15:00
-const STAGE_END_HOUR = 16;
-const STAGE_END_MIN = 30;
+const TEST_MODE = false;
+const TEST_DATE = "2025-11-22 15:30";
 
-// ==============================
-
-
-// ▼ 日付に応じて自動セット
-function autoSelectSheet() {
-    let now = new Date();
-    if (TEST_MODE) {
-        now = new Date(`${TEST_DATE}T${TEST_TIME}:00`);
-        console.log("【テストモード】", now);
+function getNow(){
+    if(TEST_MODE){
+        const [date,time]=TEST_DATE.split(" ");
+        const [y,m,d]=date.split("-").map(Number);
+        const [hh,mm]=time.split(":").map(Number);
+        return new Date(y,m-1,d,hh,mm);
     }
-
-    const todayStr = now.toISOString().split("T")[0];
-    let sheet = "Day1";
-
-    if (todayStr === DAY1_DATE) {
-        sheet = "Day1";
-    } 
-    else if (todayStr === DAY2_DATE) {
-        const min = now.getHours()*60 + now.getMinutes();
-
-        if (min >= STAGE_SWITCH_MIN) {
-            sheet = "ステージ発表"; // 14:30で切替
-        } else {
-            sheet = "Day2";
-        }
-    }
-
-    document.getElementById("daySelect").value = sheet;
-    setBackground(sheet); 
-    load(sheet);
+    return new Date();
 }
-
 
 function setBackground(mode){
-    const body = document.body;
+    const body=document.body;
     body.classList.remove("day1","day2","stage");
+    const mapImg=document.getElementById("mapImg");
+    if(mode==="Day1"){ body.classList.add("day1"); mapImg.src="images/map_day.png"; }
+    else if(mode==="Day2"){ body.classList.add("day2"); mapImg.src="images/map_day.png"; }
+    else if(mode==="ステージ発表"){ body.classList.add("stage"); mapImg.src="images/map_stage.png"; }
+}
 
-    if(mode === "Day1"){
-        body.classList.add("day1");
-    }
-    else if(mode === "Day2"){
-        body.classList.add("day2");
-    }
-    else if(mode === "ステージ発表"){
-        body.classList.add("stage");
+let firstLoad=true;
+let rows=[];
+let clickCounts={};
+
+function load(day, now){
+    const url=`https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${day}`;
+    return fetch(url)
+        .then(r=>r.text())
+        .then(t=>{ render(t, day, now); })
+        .catch(()=>{ document.getElementById("current").innerText="読み込み失敗"; });
+}
+
+function autoSelectSheet(){
+    const scrollY=window.scrollY;
+    let now=getNow();
+    let sheet;
+    const savedSheet=sessionStorage.getItem('selectedSheet');
+    if(savedSheet){ sheet=savedSheet; firstLoad=false; }
+    else if(firstLoad){
+        const todayStr=now.toISOString().split("T")[0];
+        if(todayStr===DAY1_DATE){ sheet="Day1"; }
+        else if(todayStr===DAY2_DATE){
+            const min=now.getHours()*60+now.getMinutes();
+            sheet=(min>=STAGE_START_MINUTES)?"ステージ発表":"Day2";
+        } else { sheet="Day1"; }
+        firstLoad=false;
+    } else { sheet=document.getElementById("daySelect").value; }
+
+    document.getElementById("daySelect").value=sheet;
+    setBackground(sheet);
+    load(sheet, now).then(()=>{ window.scrollTo(0, scrollY); });
+}
+
+function handleClick(index){
+    clickCounts[index]=(clickCounts[index]||0)+1;
+    const infoId=`info-${index}`;
+    const now=getNow();
+    if(clickCounts[index]===1){
+        const day=document.getElementById("daySelect").value;
+        const baseTime=new Date(2025,10,(day==="Day1"?22:23),8,0);
+        const diffMs=now-baseTime;
+        const hours=Math.floor(diffMs/3600000);
+        const mins=Math.floor((diffMs%3600000)/60000);
+        const lastEnd=rows[rows.length-1][0];
+        const [h,m]=lastEnd.split(":").map(Number);
+        const endTime=new Date(now.getFullYear(),now.getMonth(),now.getDate(),h,m);
+        if(now>endTime) return;
+        const info=document.createElement('tr');
+        info.id=infoId;
+        info.innerHTML=`<td colspan="3">開始から ${hours}時間${mins}分経過</td>`;
+        document.querySelector(`#table tr:nth-child(${index+2})`).insertAdjacentElement('afterend', info);
+    } else if(clickCounts[index]===2){
+        document.getElementById(infoId)?.remove();
+        clickCounts[index]=0;
     }
 }
 
-
-// ▼ CSV を読み込む
-function load(day){
-    const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${day}`;
-    fetch(url)
-      .then(r=>r.text())
-      .then(t=>render(t))
-      .catch(()=>{ document.getElementById("current").innerText="読み込み失敗"; });
-}
-
-
-// ▼ 表示処理
-function render(csv, dayLabel) {
-    const lines = csv.trim().split(/\r?\n/).map(l => l.split(","));
-    const header = lines[0].map(c => c.replace(/^"|"$/g, ""));
-    const rows = lines.slice(1).map(row => row.map(c => c.replace(/^"|"$/g, "")));
-
-    // ▼ 表描画
-    let html = "<tr>";
-    header.forEach(h => html += `<th>${h}</th>`);
-    html += "</tr>";
-    rows.forEach(r => {
-        html += "<tr>";
-        r.forEach(c => html += `<td>${c}</td>`);
-        html += "</tr>";
-    });
-    document.getElementById("table").innerHTML = html;
-
-    // ▼ 現在時刻
-    let now = new Date();
-    if (typeof TEST_MODE !== "undefined" && TEST_MODE) {
-        now = new Date(`${TEST_DATE}T${TEST_TIME}:00`);
-    }
-    const currentMinutes = now.getHours() * 60 + now.getMinutes();
-
-    // ▼ helper: hh:mm → 分
-    const parseTimeToMinutes = t => {
-        if (!t) return 0;
-        const [h, m] = t.split(":").map(Number);
-        return h * 60 + m;
-    };
-
-    // ▼ helper: 分 → hh:mm
-    const formatHHMM = min => {
-        const h = Math.floor(min / 60);
-        const m = min % 60;
-        return `${h}:${m.toString().padStart(2, "0")}`;
-    };
-
-    // ▼ 演奏開始・終了時刻
-    const firstRow = rows[0];
-    const lastRow = rows[rows.length - 1];
-    const startMinutes = firstRow ? parseTimeToMinutes(firstRow[0]) : 0;
-    const endMinutes = lastRow ? parseTimeToMinutes(lastRow[0]) + 8 : 0;
-
-    // ▼ ライブ全体終了時刻（11/23 16:30）
-    const liveEndMinutes = 16 * 60 + 30;
-
-    // ▼ ステージ発表開始時刻（14:30）
-    const stageStartMinutes = 14 * 60 + 30;
-
-    // ===== 1. 開始前（準備中） =====
-    if ((dayLabel === "Day1" || dayLabel === "Day2") && currentMinutes < startMinutes) {
-        document.getElementById("current").innerText =
-            `準備中です。開始時刻 ${formatHHMM(startMinutes)}までお待ちください。`;
-        document.getElementById("next").innerText = "";
-        return;
-    }
-    if (dayLabel === "ステージ発表" && currentMinutes < stageStartMinutes) {
-        document.getElementById("current").innerText =
-            `準備中です。開始時刻 ${formatHHMM(stageStartMinutes)}までお待ちください。`;
-        document.getElementById("next").innerText = "";
-        return;
-    }
-
-    // ===== 2. 演奏終了後（固定表示） =====
-    if ((dayLabel === "Day1" || dayLabel === "Day2") && currentMinutes >= endMinutes && currentMinutes < liveEndMinutes) {
-        const msg = dayLabel === "Day1" ? "11/22のストリートライブは終了しました" :
-            "11/23のストリートライブは終了しました";
-        document.getElementById("current").innerText = msg;
-        document.getElementById("next").innerText = "";
-        return;
-    }
-
-    if (currentMinutes >= liveEndMinutes) {
-        document.getElementById("current").innerText =
-            "2025年学園祭ライブは終了しました！お疲れさまでした！";
-        document.getElementById("next").innerText = "";
-        return;
-    }
-
-    // ===== 3. 演奏中 =====
-    let current = null;
-    let next = null;
-
-    rows.forEach((r, i) => {
-        const [time, band, song] = r;
-        if (!time) return;
-        const start = parseTimeToMinutes(time);
-
-        if (start <= currentMinutes) {
-            current = { time, band, song };
-        } else if (!next) {
-            // 次の演奏が休憩の場合はnextを「休憩時間」に
-            if (band === "休憩時間") {
-                next = { time, band: "休憩時間", song: "" };
-            } else {
-                next = { time, band, song };
-            }
-        }
-    });
-
-    // currentが休憩時間の場合表示を調整
-    if (current && current.band === "休憩時間") {
-        current.band = "休憩中";
-        current.song = "";
-        // 次の演奏をその後のバンドにする
-        for (let i = 0; i < rows.length; i++) {
-            const [t, b, s] = rows[i];
-            if (parseTimeToMinutes(t) > currentMinutes && b !== "休憩時間") {
-                next = { time: t, band: b, song: s };
-                break;
-            }
-        }
-    }
-
-    processNormal(rows, currentMinutes);
-}
-
-
-function processNormal(rows, currentMinutes){
-    let current = null;
-    let next = null;
-
+function processNormal(rows,currentMinutes){
+    let current=null,next=null;
     rows.forEach(r=>{
-        const [t, band, song] = r;
-        if(!t) return;
-        const [h,m] = t.split(":").map(Number);
-        const start = h*60 + m;
-
-        if(start <= currentMinutes){
-            current = { time: t, band, song };
-        } else if(!next){
-            next = { time: t, band, song };
-        }
+        const [t,band,song]=r;if(!t)return;
+        const start=parseInt(t.split(":")[0])*60+parseInt(t.split(":")[1]);
+        if(start<=currentMinutes)current={time:t,band,song};
+        else if(!next)next={time:t,band,song};
     });
-
-    // ▼ 休憩中の特別表示
-    let text = "";
+    if(current&&current.band==="休憩時間"){
+        current.band="休憩中";current.song="";
+        for(let i=0;i<rows.length;i++){
+            const [t,b,s]=rows[i];
+            if(parseInt(t.split(":")[0])*60+parseInt(t.split(":")[1])>currentMinutes&&b!=="休憩時間"){
+                next={time:t,band:b,song:s};break;
+            }
+        }
+    }
+    let text="",nextText="";
     if(current){
-        if(current.band === "休憩時間"){
-            text += `🛋️ 現在：休憩中\n`;
-        } else {
-            text += `🎵 現在演奏中：${current.song}\n バンド名: ${current.band}\n`;
-        }
-    } else {
-        text += "始まりまでお待ちください。\n";
-    }
-
-    // ▼ 次の演奏が休憩の時
-    let nextText = "";
+        if(current.band==="休憩中")text+="🛋️ 現在：休憩中<br>";
+        else text+=`🎵 現在演奏中：${current.song}<br>バンド名: ${current.band}<br>`;
+    } else text+="始まりまでお待ちください。<br>";
     if(next){
-        if(next.band === "休憩時間"){
-            nextText = `⏭️ 次：休憩時間\n休憩開始予定時刻: ${next.time}〜`;
-        } else {
-            nextText = `⏭️ 次の演奏曲：${next.song}\nバンド名: ${next.band}\n次のバンドの開始予定時刻: ${next.time}〜`;
-        }
-    } else {
-        nextText = "⏭️ 次の演奏予定：なし";
-    }
-
-    document.getElementById("current").innerText = text;
-    document.getElementById("next").innerText = nextText;
+        if(next.band==="休憩時間")nextText=`⏭️ 次：休憩時間<br>休憩開始予定時刻: ${next.time}〜`;
+        else nextText=`⏭️ 次の演奏曲：${next.song}<br>バンド名: ${next.band}<br>次のバンドの開始予定時刻: ${next.time}〜`;
+    } else nextText="⏭️ 次の演奏予定：なし";
+    document.getElementById("current").innerHTML=text;
+    document.getElementById("next").innerHTML=nextText;
 }
 
+function render(csv,dayLabel,now){
+    const lines=csv.trim().split(/\r?\n/).map(l=>l.split(","));
+    const header=lines[0].map(c=>c.replace(/^"|"$/g,""));
+    rows=lines.slice(1).map(r=>r.map(c=>c.replace(/^"|"$/g,"")));
+    let html="<tr>";header.forEach(h=>html+=`<th>${h}</th>`);html+="</tr>";
+    rows.forEach((r,i)=>{
+        const time=r[0],band=r[1],song=r[2];
+        html+=`<tr class="upcoming"><td>${time}</td><td>${band} <button onclick="handleClick(${i})">チェック</button></td><td>${song}</td></tr>`;
+    });
+    document.getElementById("table").innerHTML=html;
+    const currentMinutes=now.getHours()*60+now.getMinutes();
+    document.querySelectorAll("#table tr").forEach((tr,i)=>{
+        if(i===0)return;
+        const start=parseInt(rows[i-1][0].split(":")[0])*60+parseInt(rows[i-1][0].split(":")[1]);
+        if(start<currentMinutes)tr.className="finished";
+        else if(Math.abs(start-currentMinutes)<30)tr.className="playing";
+        else tr.className="upcoming";
+    });
+    processNormal(rows,currentMinutes);
+}
 
-
-// ▼ 手動切り替え
-document.getElementById("daySelect").onchange = e => {
-    const v = e.target.value;
-    setBackground(v);   // ← 追加！
-    load(v);
+document.getElementById("daySelect").onchange=e=>{
+    const v=e.target.value;
+    setBackground(v);
+    load(v,getNow());
 };
 
-
-// ▼ 起動時に自動判定！
 autoSelectSheet();
-
+setInterval(()=>{autoSelectSheet();},30000);
 </script>
-
-
 </body>
 </html>
